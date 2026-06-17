@@ -33,7 +33,7 @@ fn spawn_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
         .with_children(|parent| {
             // Статичная подсказка
             parent.spawn((
-                Text::new("Space — пауза    R — рандомизация матрицы    T — перезапуск позиций"),
+                Text::new("Space — пауза    R — рандомизация матрицы    T — перезапуск позиций   S — показать/скрыть настройки"),
                 TextFont {
                     font: font.clone(),
                     font_size: 14.0,

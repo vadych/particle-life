@@ -4,12 +4,14 @@ mod plugins;
 mod resources;
 
 use bevy::prelude::*;
+use bevy_egui::EguiPlugin;
 use plugins::particles::ParticlesPlugin;
 use plugins::physics::PhysicsPlugin;
 use resources::InteractionMatrix;
 
 use crate::plugins::controls::ControlsPlugin;
 use crate::plugins::hud::HudPlugin;
+use crate::plugins::matrix_editor::MatrixEditorPlugin;
 use crate::resources::SimState;
 
 fn main() {
@@ -22,6 +24,7 @@ fn main() {
             }),
             ..default()
         }))
+        .add_plugins(EguiPlugin::default())
         // Регистрируем матрицу как ресурс со случайными значениями
         .insert_resource(InteractionMatrix::random())
         .insert_resource(SimState::default())
@@ -29,6 +32,7 @@ fn main() {
         .add_plugins(PhysicsPlugin)
         .add_plugins(ControlsPlugin)
         .add_plugins(HudPlugin)
+        .add_plugins(MatrixEditorPlugin)
         .add_systems(Startup, setup_camera)
         .run();
 }

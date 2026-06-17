@@ -4,7 +4,7 @@
 pub const NUM_TYPES: usize = 6;
 
 // Сколько частиц каждого типа спавним
-pub const PARTICLES_PER_TYPE: usize = 50;
+pub const PARTICLES_PER_TYPE: usize = 150;
 
 // Размер мира (полуширина/полувысота)
 pub const WORLD_SIZE: f32 = 400.0;

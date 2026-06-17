@@ -34,11 +34,15 @@ impl InteractionMatrix {
 #[derive(bevy::prelude::Resource)]
 pub struct SimState {
     pub paused: bool,
+    pub show_matrix_editor: bool,
 }
 
 impl Default for SimState {
     fn default() -> Self {
-        Self { paused: false }
+        Self {
+            paused: false,
+            show_matrix_editor: false,
+        }
     }
 }
 

@@ -52,4 +52,8 @@ fn handle_keyboard(
         reset_event.write(ResetParticlesEvent);
         info!("Позиции частиц перезапущены");
     }
+
+    if keys.just_pressed(KeyCode::KeyS) {
+        sim_state.show_matrix_editor = !sim_state.show_matrix_editor;
+    }
 }
