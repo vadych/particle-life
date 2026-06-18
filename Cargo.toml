@@ -3,6 +3,9 @@ name = "particle-life"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+trace = ["bevy/trace_tracy"]
+
 [dependencies]
 bevy = "0.18"
 rand = "0.10"

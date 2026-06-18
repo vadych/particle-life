@@ -26,6 +26,8 @@ fn main() {
             ..default()
         }))
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
+        .add_plugins(bevy::diagnostic::EntityCountDiagnosticsPlugin::default())
+        .add_plugins(bevy::diagnostic::SystemInformationDiagnosticsPlugin)
         .add_plugins(EguiPlugin::default())
         // Регистрируем матрицу как ресурс со случайными значениями
         .insert_resource(InteractionMatrix::random())
