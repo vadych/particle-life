@@ -3,6 +3,7 @@ mod config;
 mod plugins;
 mod resources;
 
+use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use plugins::particles::ParticlesPlugin;
@@ -24,6 +25,7 @@ fn main() {
             }),
             ..default()
         }))
+        .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .add_plugins(EguiPlugin::default())
         // Регистрируем матрицу как ресурс со случайными значениями
         .insert_resource(InteractionMatrix::random())
