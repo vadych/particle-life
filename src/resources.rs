@@ -37,19 +37,10 @@ impl InteractionMatrix {
 /// Глобальное состояние симуляции.
 /// Вынесено в отдельный ресурс чтобы любая система могла
 /// проверить или изменить паузу независимо от других.
-#[derive(bevy::prelude::Resource)]
+#[derive(bevy::prelude::Resource, Default)]
 pub struct SimState {
     pub paused: bool,
     pub show_matrix_editor: bool,
-}
-
-impl Default for SimState {
-    fn default() -> Self {
-        Self {
-            paused: false,
-            show_matrix_editor: false,
-        }
-    }
 }
 
 /// Событие — команда на сброс позиций всех частиц.

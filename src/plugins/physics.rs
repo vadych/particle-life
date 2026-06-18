@@ -4,7 +4,6 @@
 //!   1. `apply_interactions` — считаем силы притяжения/отталкивания между частицами
 //!   2. `apply_friction`     — гасим скорость, чтобы система не взрывалась
 //!   3. `integrate_velocity` — двигаем частицы и оборачиваем мир тороидом
-
 use crate::components::{ParticleType, Velocity};
 use crate::config::{FORCE_SCALE, FRICTION, INTERACTION_RADIUS, WORLD_SIZE};
 use crate::resources::{InteractionMatrix, SimState, SpatialGrid};
@@ -98,7 +97,7 @@ pub fn apply_interactions(
                 }
 
                 let dist = delta.length();
-                if dist < 1e-6 || dist > INTERACTION_RADIUS {
+                if !(1e-6..=INTERACTION_RADIUS).contains(&dist) {
                     continue;
                 }
 
