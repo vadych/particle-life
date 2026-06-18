@@ -8,8 +8,8 @@
 use bevy::prelude::*;
 
 use crate::components::{ParticleType, Velocity};
-use crate::config::{FRICTION, INTERACTION_RADIUS, WORLD_SIZE};
-use crate::resources::{InteractionMatrix, SimState};
+use crate::config::{FORCE_SCALE, FRICTION, INTERACTION_RADIUS, WORLD_SIZE};
+use crate::resources::{InteractionMatrix, SimState, SpatialGrid};
 
 pub struct PhysicsPlugin;
 
@@ -44,65 +44,88 @@ impl Plugin for PhysicsPlugin {
 ///
 /// **Сложность:** O(n²) — каждая частица проверяет каждую.
 /// При n=1000 это ~1 000 000 операций за кадр. Позже заменим на spatial grid.
-fn apply_interactions(
-    mut query: Query<(&Transform, &mut Velocity, &ParticleType)>,
+pub fn apply_interactions(
+    mut grid: ResMut<SpatialGrid>,
     matrix: Res<InteractionMatrix>,
+    state: Res<SimState>,
+    mut query: Query<(Entity, &Transform, &ParticleType, &mut Velocity)>,
 ) {
-    // Rust не позволяет одновременно иметь мутабельный и иммутабельный
-    // borrow на один и тот же Query в двойном цикле.
-    // Решение: заранее собираем позиции и типы всех частиц в отдельный Vec.
-    // Это небольшая копия данных, но она позволяет нам потом мутировать velocity.
-    let particles: Vec<(Vec2, usize)> = query
+    if state.paused {
+        return;
+    }
+
+    // Фаза 1: перестраиваем сетку
+    grid.clear();
+    for (entity, transform, _, _) in query.iter() {
+        grid.insert(entity, transform.translation.truncate());
+    }
+
+    // Фаза 2: снимок — HashMap<Entity, (Vec2, usize)>
+    // HashMap нужен чтобы искать тип соседа по Entity за O(1)
+    let snapshot: std::collections::HashMap<Entity, (Vec2, usize)> = query
         .iter()
-        .map(|(transform, _, particle_type)| (transform.translation.xy(), particle_type.0))
+        .map(|(e, t, pt, _)| (e, (t.translation.truncate(), pt.0)))
         .collect();
 
-    // Перебираем каждую частицу A как потенциального "получателя" силы
-    for (transform, mut velocity, type_a) in query.iter_mut() {
-        let pos_a = transform.translation.xy();
+    let half = WORLD_SIZE * 0.5;
 
-        // Перебираем каждую частицу B как потенциального "источника" силы
-        for (pos_b, type_b) in &particles {
-            let delta = *pos_b - pos_a; // вектор от A к B
-            let dist = delta.length(); // расстояние между частицами
+    // Фаза 3: силы
+    for (&entity, &(pos, type_a)) in &snapshot {
+        let mut force = Vec2::ZERO;
 
-            // Пропускаем саму себя (dist ≈ 0) и частицы за пределами радиуса
-            if dist < 0.1 || dist > INTERACTION_RADIUS {
+        // query_neighbors возвращает &(Entity, Vec2) — деструктурируем как пару
+        for &(neighbor_entity, neighbor_pos) in grid.query_neighbors(pos) {
+            if neighbor_entity == entity {
                 continue;
             }
 
-            // Нормализуем расстояние: 0.0 = совпадают, 1.0 = граница радиуса
-            let t = dist / INTERACTION_RADIUS;
-
-            let force = if t < 0.3 {
-                // ── Зона жёсткого ядра (0.0 .. 0.3) ──────────────────────────
-                // Здесь частицы всегда отталкиваются, независимо от матрицы.
-                // Это предотвращает схлопывание всех частиц в одну точку.
-                //
-                // Сила максимальна при dist=0 и плавно убывает до 0 при t=0.3:
-                //   force = -1.0 * (1 - t/0.3)
-                -1.0 * (1.0 - t / 0.3)
-            } else {
-                // ── Зона взаимодействия (0.3 .. 1.0) ─────────────────────────
-                // Здесь работает матрица: значение может быть от -1 до +1.
-                // Положительное = притяжение, отрицательное = отталкивание.
-                //
-                // Сила линейно убывает к нулю на границе радиуса —
-                // чтобы не было резких скачков когда частицы входят/выходят из радиуса.
-                let attraction = matrix.values[type_a.0][*type_b];
-
-                // (1.0 - t) даёт 0.7 при t=0.3 и 0.0 при t=1.0
-                attraction * (1.0 - t)
+            // Тип соседа берём из HashMap по его Entity
+            let Some(&(_, type_b)) = snapshot.get(&neighbor_entity) else {
+                continue;
             };
 
-            // Применяем силу в направлении B (нормализованный вектор × скалярная сила).
-            // Коэффициент 0.5 — глобальный масштаб силы, можно вынести в config.
-            // Без него частицы двигаются слишком резко.
-            velocity.0 += delta.normalize() * force * 0.5;
+            // Тороидальное смещение
+            let mut delta = neighbor_pos - pos;
+            if delta.x > half {
+                delta.x -= WORLD_SIZE;
+            }
+            if delta.x < -half {
+                delta.x += WORLD_SIZE;
+            }
+            if delta.y > half {
+                delta.y -= WORLD_SIZE;
+            }
+            if delta.y < -half {
+                delta.y += WORLD_SIZE;
+            }
+
+            let dist = delta.length();
+            if dist < 1e-6 || dist > INTERACTION_RADIUS {
+                continue;
+            }
+
+            let t = dist / INTERACTION_RADIUS;
+            let direction = delta / dist;
+
+            let force_magnitude: f32 = if t < 0.3 {
+                // Жёсткое ядро: всегда отталкивание
+                t / 0.3 - 1.0
+            } else {
+                // Зона матрицы: треугольный профиль, пик посередине [0.3, 1.0]
+                let strength = matrix.values[type_a][type_b];
+                let zone_half = (1.0_f32 - 0.3) * 0.5; // 0.35
+                let peak = 0.3_f32 + zone_half; // 0.65
+                strength * (1.0 - (t - peak).abs() / zone_half)
+            };
+
+            force += direction * force_magnitude;
+        }
+
+        if let Ok((_, _, _, mut vel)) = query.get_mut(entity) {
+            vel.0 += force * FORCE_SCALE;
         }
     }
 }
-
 /// Гасит скорость каждой частицы на коэффициент [`FRICTION`] каждый кадр.
 ///
 /// Без трения система консервативна — скорости бесконечно накапливались бы.

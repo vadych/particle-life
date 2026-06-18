@@ -13,7 +13,7 @@ use resources::InteractionMatrix;
 use crate::plugins::controls::ControlsPlugin;
 use crate::plugins::hud::HudPlugin;
 use crate::plugins::matrix_editor::MatrixEditorPlugin;
-use crate::resources::SimState;
+use crate::resources::{SimState, SpatialGrid};
 
 fn main() {
     App::new()
@@ -30,6 +30,7 @@ fn main() {
         // Регистрируем матрицу как ресурс со случайными значениями
         .insert_resource(InteractionMatrix::random())
         .insert_resource(SimState::default())
+        .insert_resource(SpatialGrid::default())
         .add_plugins(ParticlesPlugin)
         .add_plugins(PhysicsPlugin)
         .add_plugins(ControlsPlugin)
