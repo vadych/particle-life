@@ -19,7 +19,7 @@
 ## Быстрый старт
 
 ```bash
-git clone <repo>
+git clone https://github.com/vadych/particle-life
 cd particle-life
 cargo run --release
 ```
