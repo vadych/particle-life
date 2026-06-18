@@ -31,8 +31,8 @@ fn spawn_particles(
 
         for _ in 0..PARTICLES_PER_TYPE {
             // Случайная позиция внутри мира
-            let x = rand::random_range(-WORLD_SIZE..WORLD_SIZE);
-            let y = rand::random_range(-WORLD_SIZE..WORLD_SIZE);
+            let x = rand::random_range(-WORLD_SIZE / 2.0..WORLD_SIZE / 2.0);
+            let y = rand::random_range(-WORLD_SIZE / 2.0..WORLD_SIZE / 2.0);
 
             commands.spawn((
                 Mesh2d(circle_mesh.clone()),
@@ -63,8 +63,8 @@ fn on_reset(
 
     for (mut transform, mut velocity) in query.iter_mut() {
         // Новая случайная позиция внутри мира
-        transform.translation.x = rand::random_range(-WORLD_SIZE..WORLD_SIZE);
-        transform.translation.y = rand::random_range(-WORLD_SIZE..WORLD_SIZE);
+        transform.translation.x = rand::random_range(-WORLD_SIZE / 2.0..WORLD_SIZE / 2.0);
+        transform.translation.y = rand::random_range(-WORLD_SIZE / 2.0..WORLD_SIZE / 2.0);
 
         // Сбрасываем скорость — иначе частицы сразу улетят
         // с той скоростью что накопили до сброса

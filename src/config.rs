@@ -4,10 +4,10 @@
 pub const NUM_TYPES: usize = 6;
 
 // Сколько частиц каждого типа спавним
-pub const PARTICLES_PER_TYPE: usize = 500;
+pub const PARTICLES_PER_TYPE: usize = 5000;
 
 // Размер мира (полуширина/полувысота)
-pub const WORLD_SIZE: f32 = 400.0;
+pub const WORLD_SIZE: f32 = 800.0;
 
 // Визуальный радиус одной частицы
 pub const PARTICLE_RADIUS: f32 = 3.0;

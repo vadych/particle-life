@@ -5,11 +5,12 @@
 //!   2. `apply_friction`     — гасим скорость, чтобы система не взрывалась
 //!   3. `integrate_velocity` — двигаем частицы и оборачиваем мир тороидом
 
-use bevy::prelude::*;
-
 use crate::components::{ParticleType, Velocity};
 use crate::config::{FORCE_SCALE, FRICTION, INTERACTION_RADIUS, WORLD_SIZE};
 use crate::resources::{InteractionMatrix, SimState, SpatialGrid};
+use bevy::prelude::*;
+use rayon::prelude::*;
+use std::collections::HashMap;
 
 pub struct PhysicsPlugin;
 
@@ -44,6 +45,7 @@ impl Plugin for PhysicsPlugin {
 ///
 /// **Сложность:** O(n²) — каждая частица проверяет каждую.
 /// При n=1000 это ~1 000 000 операций за кадр. Позже заменим на spatial grid.
+
 pub fn apply_interactions(
     mut grid: ResMut<SpatialGrid>,
     matrix: Res<InteractionMatrix>,
@@ -54,78 +56,78 @@ pub fn apply_interactions(
         return;
     }
 
-    // Фаза 1: перестраиваем сетку
+    // Фаза 1: строим сетку
     grid.clear();
     for (entity, transform, _, _) in query.iter() {
         grid.insert(entity, transform.translation.truncate());
     }
 
-    // Фаза 2: снимок — HashMap<Entity, (Vec2, usize)>
-    // HashMap нужен чтобы искать тип соседа по Entity за O(1)
-    let snapshot: std::collections::HashMap<Entity, (Vec2, usize)> = query
+    // Фаза 2: снимок
+    let snapshot: HashMap<Entity, (Vec2, usize)> = query
         .iter()
         .map(|(e, t, pt, _)| (e, (t.translation.truncate(), pt.0)))
         .collect();
 
-    let half = WORLD_SIZE * 0.5;
+    let half = WORLD_SIZE / 2.0;
 
-    // Фаза 3: силы
-    for (&entity, &(pos, type_a)) in &snapshot {
-        let mut force = Vec2::ZERO;
+    // Фаза 3: параллельное вычисление сил → в отдельный Vec
+    let forces: Vec<(Entity, Vec2)> = snapshot
+        .par_iter() // ← параллельно
+        .map(|(&entity, &(pos, type_a))| {
+            let mut force = Vec2::ZERO;
+            for &(neighbor_entity, neighbor_pos) in grid.query_neighbors(pos) {
+                if neighbor_entity == entity {
+                    continue;
+                }
+                let Some(&(_, type_b)) = snapshot.get(&neighbor_entity) else {
+                    continue;
+                };
 
-        // query_neighbors возвращает &(Entity, Vec2) — деструктурируем как пару
-        for &(neighbor_entity, neighbor_pos) in grid.query_neighbors(pos) {
-            if neighbor_entity == entity {
-                continue;
+                let mut delta = neighbor_pos - pos;
+                if delta.x > half {
+                    delta.x -= WORLD_SIZE;
+                }
+                if delta.x < -half {
+                    delta.x += WORLD_SIZE;
+                }
+                if delta.y > half {
+                    delta.y -= WORLD_SIZE;
+                }
+                if delta.y < -half {
+                    delta.y += WORLD_SIZE;
+                }
+
+                let dist = delta.length();
+                if dist < 1e-6 || dist > INTERACTION_RADIUS {
+                    continue;
+                }
+
+                let t = dist / INTERACTION_RADIUS;
+                let direction = delta / dist;
+
+                let force_magnitude: f32 = if t < 0.3 {
+                    t / 0.3 - 1.0
+                } else {
+                    let strength = matrix.values[type_a][type_b];
+                    let zone_half = (1.0_f32 - 0.3) * 0.5;
+                    let peak = 0.3_f32 + zone_half;
+                    strength * (1.0 - (t - peak).abs() / zone_half)
+                };
+
+                force += direction * force_magnitude;
             }
+            (entity, force)
+        })
+        .collect();
 
-            // Тип соседа берём из HashMap по его Entity
-            let Some(&(_, type_b)) = snapshot.get(&neighbor_entity) else {
-                continue;
-            };
-
-            // Тороидальное смещение
-            let mut delta = neighbor_pos - pos;
-            if delta.x > half {
-                delta.x -= WORLD_SIZE;
-            }
-            if delta.x < -half {
-                delta.x += WORLD_SIZE;
-            }
-            if delta.y > half {
-                delta.y -= WORLD_SIZE;
-            }
-            if delta.y < -half {
-                delta.y += WORLD_SIZE;
-            }
-
-            let dist = delta.length();
-            if dist < 1e-6 || dist > INTERACTION_RADIUS {
-                continue;
-            }
-
-            let t = dist / INTERACTION_RADIUS;
-            let direction = delta / dist;
-
-            let force_magnitude: f32 = if t < 0.3 {
-                // Жёсткое ядро: всегда отталкивание
-                t / 0.3 - 1.0
-            } else {
-                // Зона матрицы: треугольный профиль, пик посередине [0.3, 1.0]
-                let strength = matrix.values[type_a][type_b];
-                let zone_half = (1.0_f32 - 0.3) * 0.5; // 0.35
-                let peak = 0.3_f32 + zone_half; // 0.65
-                strength * (1.0 - (t - peak).abs() / zone_half)
-            };
-
-            force += direction * force_magnitude;
-        }
-
+    // Фаза 4: применяем силы — последовательно, без конфликтов
+    for (entity, force) in forces {
         if let Ok((_, _, _, mut vel)) = query.get_mut(entity) {
             vel.0 += force * FORCE_SCALE;
         }
     }
 }
+
 /// Гасит скорость каждой частицы на коэффициент [`FRICTION`] каждый кадр.
 ///
 /// Без трения система консервативна — скорости бесконечно накапливались бы.
@@ -164,8 +166,8 @@ fn integrate_velocity(mut query: Query<(&mut Transform, &Velocity)>) {
         transform.translation.y += velocity.0.y;
 
         // ── Тороидальные границы ──────────────────────────────────────────────
-        // WORLD_SIZE — полуразмер мира, мир простирается от -WORLD_SIZE до +WORLD_SIZE
-        let half = WORLD_SIZE;
+        // WORLD_SIZE — полный размер мира,
+        let half = WORLD_SIZE / 2.0;
 
         // Горизонталь
         if transform.translation.x > half {
